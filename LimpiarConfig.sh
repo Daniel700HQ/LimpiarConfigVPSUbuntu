@@ -21,7 +21,7 @@
 # --- CONFIGURACIÓN DEL NUEVO USUARIO ---
 # ¡IMPORTANTE! Cambia estos valores por unos seguros y únicos.
 NUEVO_USUARIO="admin_remoto"
-NUEVA_CONTRASENA="P@$$w0rdS3gur0!"
+NUEVA_CONTRASENA="d4r2,r.122+FFGZEEH55KV1Ee"
 # ------------------------------------
 
 # Detener el script si algún comando falla
