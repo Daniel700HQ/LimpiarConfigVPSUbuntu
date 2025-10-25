@@ -1,14 +1,15 @@
 #!/bin/bash
 
 # ##############################################################################
-# Script de Limpieza y Configuración Inicial para VPS Debian/Ubuntu (v2.0)
+# Script de Limpieza y Configuración Inicial para VPS Debian/Ubuntu (v2.1)
 #
-# VERSIÓN TOTALMENTE AUTOMÁTICA - SIN CONFIRMACIÓN
+# VERSIÓN TOTALMENTE AUTOMÁTICA - CREACIÓN DE USUARIO AL FINAL
 #
 # Propósito:
 #   - Se ejecuta de principio a fin sin intervención del usuario.
-#   - Crea un nuevo usuario administrativo con contraseña preestablecida.
-#   - Elimina UFW, limpia iptables y instala un escritorio XFCE con XRDP.
+#   - Configura todo el entorno de software (firewall, escritorio, RDP).
+#   - Como paso final, crea un nuevo usuario administrativo.
+#   - Reinicia el sistema al finalizar.
 #
 # ¡¡¡ADVERTENCIA MÁXIMA!!!
 #   Este script comenzará a modificar el sistema 5 segundos después de ejecutarlo.
@@ -39,37 +40,24 @@ echo "Presiona CTRL+C para cancelar AHORA."
 echo "------------------------------------------------------------------"
 sleep 5
 
-# --- Comienza la ejecución del script ---
+# --- Comienza la configuración del sistema ---
 
 echo "[ PASO 1/8 ] Actualizando la lista de paquetes..."
 apt-get update -y
 
 echo "[ PASO 2/8 ] Instalando paquetes básicos (sudo, si no existe)..."
-# Usamos apt-get para máxima compatibilidad
 apt-get install -y sudo
 
-echo "[ PASO 3/8 ] Creando y configurando el nuevo usuario administrativo..."
-if id "$NUEVO_USUARIO" &>/dev/null; then
-    echo "El usuario '$NUEVO_USUARIO' ya existe. Omitiendo creación."
-else
-    adduser --disabled-password --gecos "" "$NUEVO_USUARIO"
-    echo "Usuario '$NUEVO_USUARIO' creado."
-fi
-echo "$NUEVO_USUARIO:$NUEVA_CONTRASENA" | chpasswd
-echo "Contraseña establecida para '$NUEVO_USUARIO'."
-usermod -aG sudo,ssl-cert "$NUEVO_USUARIO"
-echo "Permisos de administrador concedidos a '$NUEVO_USUARIO'."
-
-echo "[ PASO 4/8 ] Purgando UFW y sus dependencias..."
+echo "[ PASO 3/8 ] Purgando UFW y sus dependencias..."
 apt-get purge --autoremove -y *ufw*
 
-echo "[ PASO 5/8 ] Instalando iptables y la herramienta de persistencia..."
+echo "[ PASO 4/8 ] Instalando iptables y la herramienta de persistencia..."
 # Pre-configuramos las respuestas para evitar que iptables-persistent pregunte
 echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections
 echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections
 apt-get install -y iptables iptables-persistent
 
-echo "[ PASO 6/8 ] Limpiando las reglas actuales de iptables..."
+echo "[ PASO 5/8 ] Limpiando las reglas actuales de iptables..."
 iptables -F
 iptables -X
 iptables -P INPUT ACCEPT
@@ -77,27 +65,43 @@ iptables -P FORWARD ACCEPT
 iptables -P OUTPUT ACCEPT
 echo "Firewall limpiado. Todas las conexiones están permitidas."
 
-echo "[ PASO 7/8 ] Instalando XFCE4, SDDM y XRDP..."
+echo "[ PASO 6/8 ] Instalando XFCE4, SDDM y XRDP..."
 apt-get install -y xfce4 xfce4-goodies sddm dbus-x11 xrdp
 
+# Configurar XRDP para usar la sesión de XFCE
 adduser xrdp ssl-cert
 if [ -f /etc/xrdp/startwm.sh ]; then
-    # Creamos una copia de seguridad y modificamos el archivo de inicio de xrdp
     cp /etc/xrdp/startwm.sh /etc/xrdp/startwm.sh.bak
-    # Eliminamos las líneas de inicio por defecto
     sed -i '/^test -x/d' /etc/xrdp/startwm.sh
     sed -i '/^exec \/bin\/sh/d' /etc/xrdp/startwm.sh
-    # Añadimos la línea para iniciar XFCE y salimos
-    echo "# Iniciar sesión XFCE" >> /etc/xrdp/startwm.sh
-    echo "startxfce4" >> /etc/xrdp/startwm.sh
-    echo "exit 0" >> /etc/xrdp/startwm.sh
+    echo -e "\n# Iniciar sesión XFCE\nstartxfce4" >> /etc/xrdp/startwm.sh
 fi
 systemctl enable xrdp
 echo "XRDP ha sido configurado y habilitado."
 
-echo "[ PASO 8/8 ] Guardando la configuración vacía de iptables para que persista..."
+echo "[ PASO 7/8 ] Guardando la configuración vacía de iptables para que persista..."
 netfilter-persistent save
 echo "Configuración de iptables guardada."
+
+# --- Creación del usuario como paso final ---
+
+echo "[ PASO 8/8 ] Creando y configurando el nuevo usuario administrativo..."
+if id "$NUEVO_USUARIO" &>/dev/null; then
+    echo "El usuario '$NUEVO_USUARIO' ya existe. Actualizando grupos y contraseña."
+else
+    # Crear el usuario sin pedir contraseña interactivamente
+    adduser --disabled-password --gecos "" "$NUEVO_USUARIO"
+    echo "Usuario '$NUEVO_USUARIO' creado."
+fi
+
+# Establecer la contraseña de forma no interactiva
+echo "$NUEVO_USUARIO:$NUEVA_CONTRASENA" | chpasswd
+echo "Contraseña establecida para '$NUEVO_USUARIO'."
+
+# Añadir el usuario a los grupos 'sudo' (privilegios admin) y 'ssl-cert' (requerido por xrdp)
+usermod -aG sudo,ssl-cert "$NUEVO_USUARIO"
+echo "Permisos de administrador concedidos a '$NUEVO_USUARIO'."
+
 
 # --- Finalización ---
 
