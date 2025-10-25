@@ -1,19 +1,19 @@
 #!/bin/bash
 
 # ##############################################################################
-# Script de Limpieza y Configuración Inicial para VPS Debian/Ubuntu (v1.1)
+# Script de Limpieza y Configuración Inicial para VPS Debian/Ubuntu (v2.0)
+#
+# VERSIÓN TOTALMENTE AUTOMÁTICA - SIN CONFIRMACIÓN
 #
 # Propósito:
-#   - Actualiza el sistema.
+#   - Se ejecuta de principio a fin sin intervención del usuario.
 #   - Crea un nuevo usuario administrativo con contraseña preestablecida.
-#   - Elimina UFW (Uncomplicated Firewall).
-#   - Instala y limpia las reglas de iptables.
-#   - Instala un escritorio ligero (XFCE4) y un servidor RDP (XRDP).
-#   - Guarda la configuración limpia de iptables para que persista.
+#   - Elimina UFW, limpia iptables y instala un escritorio XFCE con XRDP.
 #
-# ADVERTENCIA:
-#   - Este script reiniciará el servidor al finalizar.
-#   - Dejará el firewall completamente abierto. ¡Debes configurarlo después!
+# ¡¡¡ADVERTENCIA MÁXIMA!!!
+#   Este script comenzará a modificar el sistema 5 segundos después de ejecutarlo.
+#   NO HAY PASO DE CONFIRMACIÓN. Úsalo bajo tu propia responsabilidad.
+#   Para cancelar, presiona CTRL+C durante la cuenta atrás.
 #
 # ##############################################################################
 
@@ -28,36 +28,25 @@ set -e
 
 # 1. Verificar que el script se ejecuta como root
 if [ "$EUID" -ne 0 ]; then
-  echo "Por favor, ejecuta este script como root o con sudo."
+  echo "ERROR: Por favor, ejecuta este script como root o con sudo."
   exit 1
 fi
 
-# 2. Confirmación del usuario antes de proceder
+# --- PAUSA DE SEGURIDAD ANTES DE EMPEZAR ---
 echo "------------------------------------------------------------------"
-echo "ADVERTENCIA: Este script realizará cambios significativos en el sistema:"
-echo "  - Creará un nuevo usuario llamado '$NUEVO_USUARIO'."
-echo "  - Purgará UFW y limpiará TODAS las reglas de iptables."
-echo "  - Instalará XFCE4 y XRDP, exponiendo el puerto 3389."
-echo "  - El servidor se REINICIARÁ al finalizar."
+echo "ATENCIÓN: El script comenzará la configuración automática en 5 segundos."
+echo "Presiona CTRL+C para cancelar AHORA."
 echo "------------------------------------------------------------------"
-read -p "¿Estás seguro de que deseas continuar? (s/n): " response
-
-# ** CORRECCIÓN APLICADA AQUÍ **
-# Convertir la respuesta a minúsculas de forma compatible con todos los shells
-response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
-
-if [[ "$response" != "s" ]]; then
-  echo "Operación cancelada."
-  exit 0
-fi
+sleep 5
 
 # --- Comienza la ejecución del script ---
 
 echo "[ PASO 1/8 ] Actualizando la lista de paquetes..."
-apt update
+apt-get update -y
 
 echo "[ PASO 2/8 ] Instalando paquetes básicos (sudo, si no existe)..."
-apt install -y sudo
+# Usamos apt-get para máxima compatibilidad
+apt-get install -y sudo
 
 echo "[ PASO 3/8 ] Creando y configurando el nuevo usuario administrativo..."
 if id "$NUEVO_USUARIO" &>/dev/null; then
@@ -68,15 +57,17 @@ else
 fi
 echo "$NUEVO_USUARIO:$NUEVA_CONTRASENA" | chpasswd
 echo "Contraseña establecida para '$NUEVO_USUARIO'."
-echo "Añadiendo a '$NUEVO_USUARIO' a los grupos 'sudo' y 'ssl-cert'..."
 usermod -aG sudo,ssl-cert "$NUEVO_USUARIO"
-echo "Permisos de administrador concedidos."
+echo "Permisos de administrador concedidos a '$NUEVO_USUARIO'."
 
 echo "[ PASO 4/8 ] Purgando UFW y sus dependencias..."
-apt purge --autoremove -y *ufw*
+apt-get purge --autoremove -y *ufw*
 
 echo "[ PASO 5/8 ] Instalando iptables y la herramienta de persistencia..."
-apt install -y iptables iptables-persistent
+# Pre-configuramos las respuestas para evitar que iptables-persistent pregunte
+echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections
+echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections
+apt-get install -y iptables iptables-persistent
 
 echo "[ PASO 6/8 ] Limpiando las reglas actuales de iptables..."
 iptables -F
@@ -87,13 +78,19 @@ iptables -P OUTPUT ACCEPT
 echo "Firewall limpiado. Todas las conexiones están permitidas."
 
 echo "[ PASO 7/8 ] Instalando XFCE4, SDDM y XRDP..."
-apt install -y xfce4 xfce4-goodies sddm dbus-x11 xrdp
+apt-get install -y xfce4 xfce4-goodies sddm dbus-x11 xrdp
 
 adduser xrdp ssl-cert
 if [ -f /etc/xrdp/startwm.sh ]; then
-    sed -i.bak '/^test -x/s/^/#/' /etc/xrdp/startwm.sh
-    sed -i '/^exec \/bin\/sh/s/^/#/' /etc/xrdp/startwm.sh
-    echo -e "\n# Iniciar sesión XFCE\nstartxfce4" >> /etc/xrdp/startwm.sh
+    # Creamos una copia de seguridad y modificamos el archivo de inicio de xrdp
+    cp /etc/xrdp/startwm.sh /etc/xrdp/startwm.sh.bak
+    # Eliminamos las líneas de inicio por defecto
+    sed -i '/^test -x/d' /etc/xrdp/startwm.sh
+    sed -i '/^exec \/bin\/sh/d' /etc/xrdp/startwm.sh
+    # Añadimos la línea para iniciar XFCE y salimos
+    echo "# Iniciar sesión XFCE" >> /etc/xrdp/startwm.sh
+    echo "startxfce4" >> /etc/xrdp/startwm.sh
+    echo "exit 0" >> /etc/xrdp/startwm.sh
 fi
 systemctl enable xrdp
 echo "XRDP ha sido configurado y habilitado."
