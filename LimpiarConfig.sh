@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ##############################################################################
-# Script de Limpieza y Configuración Inicial para VPS Debian/Ubuntu
+# Script de Limpieza y Configuración Inicial para VPS Debian/Ubuntu (v1.1)
 #
 # Propósito:
 #   - Actualiza el sistema.
@@ -41,7 +41,11 @@ echo "  - Instalará XFCE4 y XRDP, exponiendo el puerto 3389."
 echo "  - El servidor se REINICIARÁ al finalizar."
 echo "------------------------------------------------------------------"
 read -p "¿Estás seguro de que deseas continuar? (s/n): " response
-response=${response,,}
+
+# ** CORRECCIÓN APLICADA AQUÍ **
+# Convertir la respuesta a minúsculas de forma compatible con todos los shells
+response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+
 if [[ "$response" != "s" ]]; then
   echo "Operación cancelada."
   exit 0
@@ -56,20 +60,14 @@ echo "[ PASO 2/8 ] Instalando paquetes básicos (sudo, si no existe)..."
 apt install -y sudo
 
 echo "[ PASO 3/8 ] Creando y configurando el nuevo usuario administrativo..."
-# Comprobar si el usuario ya existe para evitar errores
 if id "$NUEVO_USUARIO" &>/dev/null; then
     echo "El usuario '$NUEVO_USUARIO' ya existe. Omitiendo creación."
 else
-    # Crear el usuario sin pedir contraseña interactivamente
     adduser --disabled-password --gecos "" "$NUEVO_USUARIO"
     echo "Usuario '$NUEVO_USUARIO' creado."
 fi
-
-# Establecer la contraseña de forma no interactiva y segura
 echo "$NUEVO_USUARIO:$NUEVA_CONTRASENA" | chpasswd
 echo "Contraseña establecida para '$NUEVO_USUARIO'."
-
-# Añadir el usuario a los grupos 'sudo' y 'ssl-cert'
 echo "Añadiendo a '$NUEVO_USUARIO' a los grupos 'sudo' y 'ssl-cert'..."
 usermod -aG sudo,ssl-cert "$NUEVO_USUARIO"
 echo "Permisos de administrador concedidos."
@@ -91,7 +89,6 @@ echo "Firewall limpiado. Todas las conexiones están permitidas."
 echo "[ PASO 7/8 ] Instalando XFCE4, SDDM y XRDP..."
 apt install -y xfce4 xfce4-goodies sddm dbus-x11 xrdp
 
-# Configurar XRDP para usar la sesión de XFCE
 adduser xrdp ssl-cert
 if [ -f /etc/xrdp/startwm.sh ]; then
     sed -i.bak '/^test -x/s/^/#/' /etc/xrdp/startwm.sh
