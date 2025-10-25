@@ -1,13 +1,14 @@
 #!/bin/bash
 
 # ##############################################################################
-# Script de Limpieza y Configuración Inicial para VPS Debian/Ubuntu (v2.1)
+# Script de Limpieza y Configuración Inicial para VPS Debian/Ubuntu (v2.2)
 #
-# VERSIÓN TOTALMENTE AUTOMÁTICA - CREACIÓN DE USUARIO AL FINAL
+# VERSIÓN TOTALMENTE AUTOMÁTICA
 #
 # Propósito:
 #   - Se ejecuta de principio a fin sin intervención del usuario.
-#   - Configura todo el entorno de software (firewall, escritorio, RDP).
+#   - Desactiva y elimina las actualizaciones automáticas (unattended-upgrades).
+#   - Configura el entorno (firewall, escritorio, RDP).
 #   - Como paso final, crea un nuevo usuario administrativo.
 #   - Reinicia el sistema al finalizar.
 #
@@ -42,22 +43,31 @@ sleep 5
 
 # --- Comienza la configuración del sistema ---
 
-echo "[ PASO 1/8 ] Actualizando la lista de paquetes..."
+echo "[ PASO 1/9 ] Desactivando y eliminando las actualizaciones automáticas..."
+# Detener los servicios por si están en ejecución, ignorando errores si no existen.
+systemctl stop unattended-upgrades.service >/dev/null 2>&1 || true
+systemctl disable unattended-upgrades.service >/dev/null 2>&1 || true
+
+# Purgar el paquete para eliminarlo completamente del sistema.
+# apt-get no falla si el paquete no está instalado, simplemente lo notifica.
+apt-get purge --autoremove -y unattended-upgrades
+echo "Unattended-upgrades eliminado."
+
+echo "[ PASO 2/9 ] Actualizando la lista de paquetes..."
 apt-get update -y
 
-echo "[ PASO 2/8 ] Instalando paquetes básicos (sudo, si no existe)..."
+echo "[ PASO 3/9 ] Instalando paquetes básicos (sudo, si no existe)..."
 apt-get install -y sudo
 
-echo "[ PASO 3/8 ] Purgando UFW y sus dependencias..."
+echo "[ PASO 4/9 ] Purgando UFW y sus dependencias..."
 apt-get purge --autoremove -y *ufw*
 
-echo "[ PASO 4/8 ] Instalando iptables y la herramienta de persistencia..."
-# Pre-configuramos las respuestas para evitar que iptables-persistent pregunte
+echo "[ PASO 5/9 ] Instalando iptables y la herramienta de persistencia..."
 echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections
 echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections
 apt-get install -y iptables iptables-persistent
 
-echo "[ PASO 5/8 ] Limpiando las reglas actuales de iptables..."
+echo "[ PASO 6/9 ] Limpiando las reglas actuales de iptables..."
 iptables -F
 iptables -X
 iptables -P INPUT ACCEPT
@@ -65,7 +75,7 @@ iptables -P FORWARD ACCEPT
 iptables -P OUTPUT ACCEPT
 echo "Firewall limpiado. Todas las conexiones están permitidas."
 
-echo "[ PASO 6/8 ] Instalando XFCE4, SDDM y XRDP..."
+echo "[ PASO 7/9 ] Instalando XFCE4, SDDM y XRDP..."
 apt-get install -y xfce4 xfce4-goodies sddm dbus-x11 xrdp
 
 # Configurar XRDP para usar la sesión de XFCE
@@ -79,29 +89,25 @@ fi
 systemctl enable xrdp
 echo "XRDP ha sido configurado y habilitado."
 
-echo "[ PASO 7/8 ] Guardando la configuración vacía de iptables para que persista..."
+echo "[ PASO 8/9 ] Guardando la configuración vacía de iptables para que persista..."
 netfilter-persistent save
 echo "Configuración de iptables guardada."
 
 # --- Creación del usuario como paso final ---
 
-echo "[ PASO 8/8 ] Creando y configurando el nuevo usuario administrativo..."
+echo "[ PASO 9/9 ] Creando y configurando el nuevo usuario administrativo..."
 if id "$NUEVO_USUARIO" &>/dev/null; then
     echo "El usuario '$NUEVO_USUARIO' ya existe. Actualizando grupos y contraseña."
 else
-    # Crear el usuario sin pedir contraseña interactivamente
     adduser --disabled-password --gecos "" "$NUEVO_USUARIO"
     echo "Usuario '$NUEVO_USUARIO' creado."
 fi
 
-# Establecer la contraseña de forma no interactiva
 echo "$NUEVO_USUARIO:$NUEVA_CONTRASENA" | chpasswd
 echo "Contraseña establecida para '$NUEVO_USUARIO'."
 
-# Añadir el usuario a los grupos 'sudo' (privilegios admin) y 'ssl-cert' (requerido por xrdp)
 usermod -aG sudo,ssl-cert "$NUEVO_USUARIO"
 echo "Permisos de administrador concedidos a '$NUEVO_USUARIO'."
-
 
 # --- Finalización ---
 
